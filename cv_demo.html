@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTS Smart Parking AI - CV Prototype</title>
+    <style>
+        body { margin: 0; background: #222; color: #fff; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
+        header { width: 100%; padding: 15px; background: #000; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 1.2rem; }
+        
+        #controls { background: #333; padding: 10px; border-radius: 5px; margin-bottom: 20px; display: flex; gap: 10px; }
+        button { background: #555; border: 1px solid #777; color: white; padding: 8px 15px; cursor: pointer; }
+        button:hover { background: #666; }
+        button.active { background: #007bff; border-color: #0056b3; }
+
+        #canvas-container { 
+            position: relative; 
+            border: 2px solid #555; 
+            display: inline-block; 
+            width: fit-content;
+        }
+
+        /* The Image */
+        #parking-img { display: block; max-width: 900px; height: auto; }
+
+        /* The Boxes */
+        .parking-box {
+            position: absolute;
+            width: 50px; 
+            height: 70px;
+            border: 2px solid lime; /* default green */
+            background: rgba(0, 255, 0, 0.2);
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 10px;
+            color: #fff;
+            text-shadow: 1px 1px 1px black;
+        }
+
+        .parking-box.occupied {
+            border-color: red;
+            background: rgba(255, 0, 0, 0.4);
+        }
+
+        /* Integration Panel */
+        #integration-log {
+            width: 80%;
+            max-width: 900px;
+            height: 150px;
+            background: #111;
+            border: 1px solid #444;
+            margin-top: 20px;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+        }
+        .log-entry { margin: 5px 0; border-bottom: 1px solid #222; }
+        .log-success { color: #4caf50; }
+        .log-info { color: #2196f3; }
+
+        /* Instructions Overlay */
+        #instructions {
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            padding: 20px;
+            border: 2px solid #007bff;
+            border-radius: 10px;
+            z-index: 1000;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1><i class="fas fa-video"></i> UTS Smart Parking: AI Vision Module</h1>
+        <div id="status-panel">
+            <span>Detected Spots: <strong id="total-spots">0</strong></span> | 
+            <span>Available: <strong id="avail-spots" style="color:lime">0</strong></span>
+        </div>
+    </header>
+
+    <div id="controls">
+        <button id="mode-add" class="active" onclick="setMode('add')">Step 1: Define Spots (Click Image)</button>
+        <button id="mode-sim" onclick="startSimulation()">Step 2: Start AI Detection</button>
+        <button onclick="clearAll()">Reset All</button>
+        <button onclick="broadcastData()" style="background: green">Force Update System</button>
+    </div>
+
+    <!-- Instructions Popup -->
+    <div id="instructions">
+        <h2>Setup Mode</h2>
+        <p>1. Click on the image to place a parking box.</p>
+        <p>2. Drag the corners (not implemented in fast ver) or just click to place.</p>
+        <p>3. Right-click a box to remove it.</p>
+        <p>4. Once all 60 spots (or however many) are marked, click "Step 2".</p>
+        <button onclick="document.getElementById('instructions').style.display='none'">Got it</button>
+    </div>
+
+    <div id="canvas-container">
+        <!-- Change this source to match the user's file -->
+        <img id="parking-img" src="Screenshot 2026-03-15 112336.png" alt="CCTV Feed">
+    </div>
+
+    <h3><i class="fas fa-terminal"></i> System Integration Log</h3>
+    <div id="integration-log">
+        <div class="log-entry">Waiting for video stream... [OK]</div>
+        <div class="log-entry">AI Model Loaded (YOLOv8-Tiny)... [OK]</div>
+    </div>
+
+    <script>
+        // State
+        let spots = [];
+        let isSimulating = false;
+        let mode = 'add'; // 'add' or 'sim'
+        let simInterval = null;
+
+        const container = document.getElementById('canvas-container');
+        const logBox = document.getElementById('integration-log');
+        const totalEl = document.getElementById('total-spots');
+        const availEl = document.getElementById('avail-spots');
+
+        // Click to add spots
+        container.addEventListener('click', (e) => {
+            if (mode !== 'add' || e.target.classList.contains('parking-box')) return;
+
+            // Get coordinates relative to image
+            const rect = container.getBoundingClientRect();
+            // offset for margins/padding causing drift
+            const x = e.clientX - rect.left - 20; // center box
+            const y = e.clientY - rect.top - 30;
+
+            createBox(x, y);
+        });
+
+        function createBox(x, y) {
+            const id = spots.length + 1;
+            const box = document.createElement('div');
+            box.className = 'parking-box';
+            box.style.left = x + 'px';
+            box.style.top = y + 'px';
+            box.innerHTML = id;
+            box.dataset.id = id;
+            
+            // Default to GREEN (Free)
+            box.dataset.status = 'free'; 
+            box.style.borderColor = 'lime';
+
+            // Right click remove
+            box.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if(mode === 'add') {
+                    box.remove();
+                    spots = spots.filter(s => s.element !== box);
+                    updateCounts();
+                }
+            });
+
+            // Click to toggle manually (for demo control)
+            box.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if(mode === 'sim') {
+                    toggleBoxStatus(box);
+                    broadcastData(); // Update immediately on manual click
+                }
+            });
+
+            // NEW LISTENERS FOR CURSOR SIMULATION
+            box.addEventListener('mouseenter', () => {
+                if(mode === 'sim') {
+                    setBoxStatus(box, 'occupied');
+                    broadcastData();
+                }
+            });
+
+            box.addEventListener('mouseleave', () => {
+                if(mode === 'sim') {
+                    setBoxStatus(box, 'free');
+                    broadcastData();
+                }
+            });
+
+            container.appendChild(box);
+            spots.push({ id, element: box, status: 'free' });
+            updateCounts();
+            log(`Added Parking Spot #${id} at [${Math.floor(x)}, ${Math.floor(y)}]`, 'info');
+        }
+
+        function setMode(newMode) {
+            mode = newMode;
+            document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            if(mode === 'add') {
+                document.getElementById('mode-add').classList.add('active');
+                stopSimulation();
+            } else {
+                document.getElementById('mode-sim').classList.add('active');
+            }
+        }
+
+        function startSimulation() {
+            setMode('sim');
+            log("AI DETECTION ACTIVE: Use cursor to simulate vehicle movement.", "info");
+            
+            // Re-broadcast state frequently to mimic heartbeat
+            if(simInterval) clearInterval(simInterval);
+            simInterval = setInterval(() => {
+                broadcastData();
+            }, 1000);
+        }
+
+        function stopSimulation() {
+            if(simInterval) clearInterval(simInterval);
+            simInterval = null;
+        }
+
+        function setBoxStatus(boxElement, status) {
+            boxElement.dataset.status = status;
+            if(status === 'occupied') {
+                boxElement.classList.add('occupied');
+                boxElement.style.borderColor = 'red';
+            } else {
+                boxElement.classList.remove('occupied');
+                boxElement.style.borderColor = 'lime';
+            }
+            updateCounts();
+        }
+
+        function toggleBoxStatus(boxElement) {
+            const isFree = boxElement.dataset.status === 'free';
+            const newStatus = isFree ? 'occupied' : 'free';
+            setBoxStatus(boxElement, newStatus);
+        }
+
+        function updateCounts() {
+            const total = spots.length;
+            const free = spots.filter(s => s.element.dataset.status === 'free').length;
+            
+            totalEl.innerText = total;
+            availEl.innerText = free;
+        }
+
+        function broadcastData() {
+            const total = spots.length;
+            const free = spots.filter(s => s.element.dataset.status === 'free').length;
+            
+            // Simulating API Call / Webhook
+            log(`API UPDATE >> Parking Lot ID: 'Gate 2' | Total: ${total} | Free: ${free}`, 'success');
+            
+            // Save to localStorage so main site can read it
+            const dataPacket = { 
+                id: 'gate2', 
+                total: total, 
+                free: free, 
+                timestamp: Date.now() 
+            };
+            localStorage.setItem('cv_update', JSON.stringify(dataPacket));
+        }
+
+        function log(msg, type='info') {
+            const div = document.createElement('div');
+            div.className = `log-entry log-${type}`;
+            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logBox.prepend(div);
+        }
+
+        function clearAll() {
+            spots.forEach(s => s.element.remove());
+            spots = [];
+            updateCounts();
+            log("Cleared all detection zones.", "info");
+        }
+    </script>
+</body>
+</html>

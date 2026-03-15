@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTS Smart Parking System</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Using FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <h1><i class="fas fa-parking"></i> UTS Smart Parking</h1>
+        </div>
+        <div class="weather-widget">
+            <span id="weather-text">Sunny</span>
+            <button id="weather-toggle" onclick="toggleWeather()">
+                <i class="fas fa-sun" id="weather-icon"></i> Switch
+            </button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Navigation Tabs -->
+        <nav class="tabs">
+            <button class="tab-btn active" onclick="switchTab('dashboard', event)">
+                <i class="fas fa-th-large"></i> Live Dashboard
+            </button>
+            <button class="tab-btn" onclick="switchTab('planning', event)">
+                <i class="fas fa-route"></i> Plan Parking
+            </button>
+            <button class="tab-btn" onclick="switchTab('find-my-car', event)">
+                <i class="fas fa-car"></i> Find My Car
+            </button>
+        </nav>
+
+        <!-- SECTION 1: LIVE DASHBOARD -->
+        <section id="dashboard" class="tab-content active">
+            <div class="status-bar">
+                <p>Live Updates: <span class="blink">Active</span></p>
+                <p id="total-capacity">Total Free: --</p>
+            </div>
+            <div id="parking-list" class="grid-container">
+                <!-- Parking Cards will be injected here by JS -->
+            </div>
+        </section>
+
+        <!-- SECTION 2: PLAN PARKING -->
+        <section id="planning" class="tab-content">
+            <div class="planner-box">
+                <h2>Where are you going?</h2>
+                <div class="form-group">
+                    <label>Select Destination Block:</label>
+                    <select id="destination-select">
+                        <option value="Block 5">Block 5 (Academic)</option>
+                        <option value="Gate 2">Gate 2 Entrance</option>
+                        <option value="Cafeteria">Student Cafeteria</option>
+                        <option value="Admin">Admin Building</option>
+                        <option value="Library">Library</option>
+                    </select>
+                </div>
+                <button class="action-btn" onclick="findBestParking()">Find Nearest Parking</button>
+            </div>
+
+            <div id="recommendation-result" class="result-card hidden">
+                <div class="rec-header">
+                    <h3><i class="fas fa-star"></i> Best Options</h3>
+                    <span id="weather-alert" class="badge hidden">Rain Mode Active</span>
+                </div>
+                <div id="rec-content"></div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: FIND MY CAR -->
+        <section id="find-my-car" class="tab-content">
+            <div class="finder-box">
+                <h2>Parked your car? Save location.</h2>
+                <div class="form-group">
+                    <select id="save-location-select">
+                        <option value="">-- Select Carpark --</option>
+                        <!-- Populated by JS -->
+                    </select>
+                    <input type="text" id="save-note" placeholder="Note (e.g., Level 2a, Bay 45)">
+                </div>
+                <button class="action-btn save" onclick="saveMyCar()">Save Location</button>
+                
+                <div id="saved-location-display" class="saved-card hidden">
+                    <h3>Your Saved Spot</h3>
+                    <h1 id="saved-spot-name">--</h1>
+                    <p id="saved-spot-note">--</p>
+                    <p class="time">Saved at: <span id="saved-time">--</span></p>
+                    <button class="action-btn delete" onclick="clearMyCar()">Leave Spot</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
